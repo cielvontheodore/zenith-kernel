@@ -1,0 +1,22 @@
+# PLACEHOLDER — replace this file with the real modprobed.db from your T480.
+#
+# This is deliberately not a real database. If you build against this file
+# as-is, `make localmodconfig` will treat "no modules recorded" as "prune
+# essentially everything" for any driver not explicitly forced back on by
+# config/zenith.config. That fragment covers the T480's core hardware, but
+# is not a substitute for a real, populated database.
+#
+# On the T480, generate a real one with:
+#
+#   sudo pacman -S modprobed-db        # Arch/CachyOS
+#   # or build it from source: https://github.com/graysky2/modprobed-db
+#
+#   modprobed-db store                 # log every module ever probed
+#   # use the machine normally for a while: suspend/resume, plug in USB
+#   # devices, connect to Wi-Fi and Ethernet, use the webcam/fingerprint
+#   # reader if applicable, etc., so the database actually reflects
+#   # real usage.
+#
+# Then copy the resulting database (usually
+# $XDG_CONFIG_HOME/modprobed.db or ~/.config/modprobed.db) to this path
+# and commit it.

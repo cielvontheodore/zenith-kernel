@@ -1,0 +1,8 @@
+No flake.lock is committed here because this sandbox has no network access
+to run `nix flake lock`. Run it yourself once, from the repo root:
+
+    nix flake lock
+
+Commit the resulting flake.lock. It pins the exact nixpkgs revision this
+kernel is built against — see README.md "Reproducibility notes" for why
+that matters for Cachix cache hits on the consuming side too.

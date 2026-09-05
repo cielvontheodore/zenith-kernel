@@ -1,0 +1,48 @@
+name: Build Zenith Kernel
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+# Avoid piling up redundant builds if you push several times in a row.
+concurrency:
+  group: zenith-kernel-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350 # kernel + ThinLTO builds are slow; GH's job cap is 360m
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # A full LTO kernel build can use more memory than the hosted runner's
+      # default swap allows. This is cheap insurance against an OOM kill
+      # mid-link; drop it if you move to a larger/self-hosted runner.
+      - name: Add extra swap
+        run: |
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Configure Cachix
+        uses: cachix/cachix-action@v15
+        with:
+          name: zenith-kernel
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
+      - name: Build Zenith kernel
+        run: nix build .#zenithKernel -L
+
+      - name: Flake check
+        run: nix flake check --no-build
