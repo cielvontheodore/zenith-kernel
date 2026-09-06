@@ -74,7 +74,7 @@ let
     url = "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${kernelVersion}.tar.xz";
     # Placeholder. `nix build` will fail on the first run and print the
     # correct hash to paste in here -- see README.md "First build" section.
-    hash = lib.fakeHash;
+    hash = "sha256-bPkR0BMk9Fyd0vRM8G9VvaDs84O8SY8TKgxUl2hTEyc=";
   };
 
   #############################################################################
@@ -123,9 +123,9 @@ let
   # intentionally tiny so a fresh checkout fails safe (produces an
   # extremely trimmed kernel) rather than silently building something that
   # looks plausible but boots nothing.
-  modprobedDb = ../config/modprobed.db;
+  modprobedDb = ./config/modprobed.db;
 
-  zenithConfigFragment = ../config/zenith.config;
+  zenithConfigFragment = ./config/zenith.config;
 
   #############################################################################
   # 5. Generate .config: defconfig -> localmodconfig(modprobed.db) ->

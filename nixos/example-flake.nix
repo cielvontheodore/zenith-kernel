@@ -5,7 +5,7 @@
   description = "T480 NixOS configuration";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
     zenith.url = "github:<me>/zenith-kernel";
     # CRITICAL for cache hits: make the kernel flake evaluate against the
