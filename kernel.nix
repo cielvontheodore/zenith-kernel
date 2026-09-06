@@ -100,13 +100,13 @@ let
 
   borePatch = fetchpatch {
     url = "https://raw.githubusercontent.com/CachyOS/kernel-patches/master/6.6/sched/0001-bore-cachy.patch";
-    hash = lib.fakeHash; # fill in after first `nix build` failure
+    hash = "sha256-Tz7yxrwo3kzd2J/BvX3HEQmVcMD2ILxFXvY/d46iB7I="; # fill in after first `nix build` failure
   };
 
   isaLevelPatch = fetchpatch {
     # graysky2/kernel_compiler_patch: adds CONFIG_X86_64_VERSION.
-    url = "https://raw.githubusercontent.com/graysky2/kernel_compiler_patch/master/more-uarches-for-kernel-6.1%2B.patch";
-    hash = lib.fakeHash; # fill in after first `nix build` failure
+    url = "https://raw.githubusercontent.com/graysky2/kernel_compiler_patch/master/more-uarches-for-kernel-6.1.79-6.8-rc3.patch";
+    hash = "sha256-Gjglt5BBPQmAbJohFfZ5vijkNM/MacAdwGm2NNHoAHo="; # fill in after first `nix build` failure
   };
 
   kernelPatches = [
