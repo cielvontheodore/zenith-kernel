@@ -1,55 +1,52 @@
 {
-  description = "Zenith Kernel — CI-built, Cachix-distributed custom Linux 6.6 for the ThinkPad T480";
+  description = "Zenith Kernel — a BORE/Clang/ThinLTO linux-tkg gaming kernel for the ThinkPad T480, built by GitHub Actions and distributed via Cachix";
 
   inputs = {
-    # Pin exactly. The consuming NixOS flake MUST use the same nixpkgs
-    # revision (via `inputs.zenith.inputs.nixpkgs.follows = "nixpkgs"` or an
-    # identical pin) or the kernel derivation's hash will differ and the
-    # Cachix cache will miss, forcing a full local rebuild. See README.md.
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";
+    # Pinned, not "unstable" bare — flake.lock is what makes this an actual
+    # pin rather than a moving target. Run `nix flake lock` once after
+    # cloning (needs network) to generate flake.lock; CI does this itself.
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
   };
 
-  outputs = { self, nixpkgs }:
+  # Lets `nixos-rebuild switch` (and plain `nix build` against this flake)
+  # substitute straight from Cachix without the user having to hand-edit
+  # nix.conf. Fill in <your-cache-name> / <your-cache-public-key> after you
+  # create the Cachix cache — see README.md "Setup" step 1.
+  nixConfig = {
+    extra-substituters = [ "https://<your-cache-name>.cachix.org" ];
+    extra-trusted-public-keys = [ "<your-cache-name>.cachix.org-1:<your-cache-public-key>" ];
+  };
+
+  outputs =
+    { self, nixpkgs }:
     let
-      system = "x86_64-linux";
+      system = "x86_64-linux"; # the only target: the T480 itself.
+      pkgs = import nixpkgs { inherit system; };
+      pin = import ./nix/pin.nix { inherit (pkgs) lib; };
 
-      pkgs = import nixpkgs {
-        inherit system;
-        config.allowUnfree = false;
-      };
-
-      # kernel.nix returns a full `linuxPackagesFor` set (kernel + dev +
-      # headers + the ability to build extraModulePackages against it).
-      zenithPackages = pkgs.callPackage ./kernel.nix { };
+      zenithKernel = pkgs.callPackage ./nix/kernel.nix { inherit pin; };
+      linuxPackages = pkgs.linuxPackagesFor zenithKernel;
     in
     {
       packages.${system} = {
-        # `nix build .#zenithKernel` — bare kernel derivation only.
-        zenithKernel = zenithPackages.kernel;
-
-        # This is what `boot.kernelPackages` should be pointed at from a
-        # consuming NixOS configuration.
-        linuxPackages_zenith = zenithPackages;
-
-        default = zenithPackages.kernel;
+        zenithKernel = zenithKernel;
+        inherit linuxPackages;
+        default = zenithKernel;
       };
 
-      # Lets a consumer do:
-      #   nixpkgs.overlays = [ zenith.overlays.default ];
-      #   boot.kernelPackages = pkgs.linuxPackages_zenith;
-      # instead of reaching into the flake's `packages` output directly.
       overlays.default = final: prev: {
-        linuxPackages_zenith = final.callPackage ./kernel.nix { };
+        zenithKernel = final.callPackage ./nix/kernel.nix { inherit pin; };
+        zenithLinuxPackages = final.linuxPackagesFor final.zenithKernel;
       };
 
-      devShells.${system}.default = pkgs.mkShell {
-        name = "zenith-kernel-dev";
-        packages = with pkgs; [ nix cachix git ];
-        shellHook = ''
-          echo "Zenith Kernel dev shell."
-          echo "  nix build .#zenithKernel -L     # build the bare kernel"
-          echo "  nix build .#linuxPackages_zenith.kernel -L"
-        '';
-      };
+      nixosModules.default = import ./nix/nixos-module.nix;
+
+      # `nix flake check` sanity check: does the derivation even evaluate
+      # (not build — building needs the real pin, not the placeholder one)
+      # without throwing? Catches "someone broke kernel.nix" before CI spends
+      # an hour compiling anything.
+      checks.${system}.evaluates = pkgs.runCommand "zenith-kernel-evaluates" { } ''
+        echo ${zenithKernel.drvPath} > $out
+      '';
     };
 }

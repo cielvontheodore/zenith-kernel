@@ -1,0 +1,80 @@
+# =============================================================================
+# zenith-t480-essential.myfrag
+#
+# modprobed-db (customization.cfg: _modprobeddb="true") trims the kernel's
+# module list down to whatever was actually loaded on the reference machine
+# at the time the db was captured. That's great for build time and image
+# size, but it means anything you *weren't* using that day (a USB dock, a
+# different Wi-Fi AP band, a resumed-from-hibernate path) could quietly
+# vanish. This fragment force-enables the hardware paths that must always be
+# present on a ThinkPad T480 running NixOS/systemd-boot/BTRFS/NVMe, no matter
+# what modprobed-db captured — the "do not make it unbootable to save a few
+# megabytes" requirement, enforced in config rather than left to chance.
+#
+# Applied via linux-tkg's config-fragments mechanism (customization.cfg:
+# _config_fragments="true"), which merges these lines into .config after
+# modprobed-db has done its trimming pass.
+# =============================================================================
+
+# --- Boot-critical storage: NVMe + BTRFS (root fs) --------------------------
+CONFIG_BLK_DEV_NVME=y
+CONFIG_NVME_CORE=y
+CONFIG_NVME_MULTIPATH=y
+CONFIG_BTRFS_FS=y
+CONFIG_BTRFS_FS_POSIX_ACL=y
+# SATA/AHCI kept as a module too, in case of an eSATA/USB-SATA dock — cheap
+# insurance, negligible size cost as a module rather than builtin.
+CONFIG_ATA=m
+CONFIG_SATA_AHCI=m
+
+# --- Graphics: Intel UHD 620 (i915) -----------------------------------------
+CONFIG_DRM=m
+CONFIG_DRM_I915=m
+CONFIG_FB=y
+CONFIG_FRAMEBUFFER_CONSOLE=y
+
+# --- USB / HID (keyboard, trackpoint, external mice/pads) -------------------
+CONFIG_USB=y
+CONFIG_USB_XHCI_HCD=y
+CONFIG_USB_EHCI_HCD=m
+CONFIG_HID=y
+CONFIG_HID_GENERIC=y
+CONFIG_HID_LENOVO=m
+CONFIG_HID_MULTITOUCH=m
+CONFIG_I2C_HID_ACPI=m
+
+# --- Wi-Fi (Intel wireless, common T480 WLAN cards) --------------------------
+CONFIG_IWLWIFI=m
+CONFIG_IWLMVM=m
+CONFIG_CFG80211=m
+CONFIG_MAC80211=m
+
+# --- Audio (Realtek codec on Intel HDA) --------------------------------------
+CONFIG_SND=m
+CONFIG_SND_HDA_INTEL=m
+CONFIG_SND_HDA_CODEC_REALTEK=m
+
+# --- ThinkPad-specific platform support (battery, fn keys, thermal) ---------
+CONFIG_THINKPAD_ACPI=m
+CONFIG_ACPI_BATTERY=y
+CONFIG_BACKLIGHT_CLASS_DEVICE=y
+CONFIG_X86_PLATFORM_DEVICES=y
+
+# --- Suspend/resume/hibernate -------------------------------------------------
+CONFIG_SUSPEND=y
+CONFIG_HIBERNATION=y
+CONFIG_ACPI_SLEEP=y
+CONFIG_PM=y
+CONFIG_PM_SLEEP=y
+
+# --- Boot chain: EFI stub + systemd-boot ------------------------------------
+CONFIG_EFI=y
+CONFIG_EFI_STUB=y
+CONFIG_EFIVAR_FS=y
+CONFIG_PCI=y
+
+# --- Basic networking (Ethernet dock/dongle + normal TCP/IP stack) ----------
+CONFIG_NET=y
+CONFIG_INET=y
+CONFIG_USB_NET_DRIVERS=m
+CONFIG_USB_RTL8152=m

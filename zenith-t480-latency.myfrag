@@ -1,0 +1,47 @@
+# =============================================================================
+# zenith-t480-latency.myfrag
+#
+# Choosing "bore" as the scheduler (customization.cfg: _cpusched="bore")
+# picks the task-scheduling *algorithm*, but the kernel's separate
+# "preemption model" setting (how eagerly the kernel can interrupt itself to
+# run something more urgent) is a distinct knob that linux-tkg doesn't fully
+# pin down through customization.cfg alone on every base config. We force it
+# explicitly here rather than trust whatever the upstream Arch-derived base
+# .config happens to default to for this kernel version.
+# =============================================================================
+
+# Full preemption: the kernel can preempt itself almost anywhere, minimizing
+# worst-case scheduling latency for the desktop/game process at the cost of
+# a small amount of throughput vs the "none"/"voluntary" models tuned for
+# servers. This is the standard "low latency desktop" choice and is what we
+# actually want here — explicitly disable PREEMPT_DYNAMIC's runtime-selection
+# indirection so we always get PREEMPT, not whatever its own default is.
+CONFIG_PREEMPT=y
+CONFIG_PREEMPT_VOLUNTARY=n
+CONFIG_PREEMPT_NONE=n
+CONFIG_PREEMPT_DYNAMIC=n
+CONFIG_PREEMPT_COUNT=y
+
+# RCU: use the non-boot-CPU-limited "rcu_nocbs"-friendly config so RCU
+# callback processing can run on any CPU instead of piling up on CPU0 — with
+# only 4 cores/8 threads, avoiding an artificial single-core bottleneck for
+# background RCU work matters more here than it would on a big server part.
+CONFIG_RCU_NOCB_CPU=y
+CONFIG_RCU_BOOST=y
+CONFIG_RCU_BOOST_DELAY=500
+
+# 1000Hz tick, matching customization.cfg's _timer_freq — repeated here as a
+# belt-and-braces pin in case the base .config's HZ default disagrees.
+CONFIG_HZ_1000=y
+CONFIG_HZ=1000
+CONFIG_NO_HZ_IDLE=y
+CONFIG_NO_HZ_FULL=n
+
+# I/O: multi-queue block layer with the "none"/mq-deadline schedulers
+# available at runtime — mq-deadline behaves well for the mixed
+# game-asset-streaming + general desktop I/O pattern on NVMe, without the
+# CFQ-era assumptions "bfq" makes about rotational disks.
+CONFIG_BLK_DEV_THROTTLING=n
+CONFIG_MQ_IOSCHED_DEADLINE=y
+CONFIG_MQ_IOSCHED_KYBER=y
+CONFIG_IOSCHED_BFQ=m
