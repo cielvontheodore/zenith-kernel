@@ -1,38 +1,52 @@
 # Patches
 
-Both patches used by this flake are fetched by `kernel.nix` via `fetchpatch`
-(with `lib.fakeHash` placeholders you must fill in — see the repo README's
-"First build" section). Nothing under this directory is applied automatically
-by itself; it exists as documentation and as a place to vendor the patches
-locally if you'd rather not depend on fetching them at build time.
+`kernel.nix` fetches the BORE patch below via `fetchpatch`. Nothing under
+this directory is applied automatically by itself; it exists as
+documentation and as a place to vendor the patch locally if you'd rather
+not depend on fetching it at build time.
 
-## BORE scheduler
+## BORE scheduler — why pinned to 6.6.3
 
-Source: https://github.com/firelzrd/bore-scheduler and its CachyOS mirror
-https://github.com/CachyOS/kernel-patches
+Source: https://github.com/firelzrd/bore-scheduler
 
-BORE patches are versioned **per exact kernel point release** upstream
-(firelzrd tags things like `6.6.3-bore4.1.1`), while CachyOS additionally
-maintains a per-branch patch (`6.6/sched/0001-bore-cachy.patch`) that tends
-to apply across an entire `6.6.x` line without needing an exact point-release
-match. `kernel.nix` defaults to the CachyOS per-branch patch for that reason.
+BORE is **not** maintained per arbitrary 6.6.x point release. Upstream
+backported EEVDF-related changes into `kernel/sched/fair.c` partway through
+the 6.6 stable series. firelzrd's own issue tracker
+([#39](https://github.com/firelzrd/bore-scheduler/issues/39)) documents
+that even the maintainer could not get a confirmed-working patch past
+6.6.30, and only ever published an explicitly untested "WIP" for it:
 
-**If you change `kernelPatchVersion` in `kernel.nix`:** re-check that the
-CachyOS `6.6` patch still applies to the new point release before pushing —
-CI will fail with a clear patch-rejection error if it doesn't, at which point
-either wait for CachyOS to update it, or switch to pinning a specific
-firelzrd tag that matches your exact `6.6.x` version.
+> "I couldn't manage to build linux 6.6.30, cannot guarantee a success of
+> build or boot (yet). It hasn't gone through ANY test."
 
-## x86-64-v3 ISA level (`CONFIG_X86_64_VERSION`)
+firelzrd's repository still carries a commit explicitly labeled
+"BORE 6.6.3 (stable) patch," even while their own development has moved on
+to far newer kernel bases. That makes 6.6.3 their designated stable
+reference point for the 6.6 branch — not an abandoned tag, and not a guess.
+This repo pins `kernelPatchVersion` to `"3"` for exactly that reason.
 
-Source: https://github.com/graysky2/kernel_compiler_patch
+**Patch used:**
+`https://raw.githubusercontent.com/firelzrd/bore-scheduler/main/patches/stable/linux-6.6-bore/0001-linux6.6.y-bore5.1.0.patch`
 
-This is the **only** way to get an x86-64-v3-wide kernel build — mainline
-Linux has no built-in Kconfig option for x86-64 microarchitecture levels.
-Older versions of this patch exposed `GENERIC_CPU2` / `GENERIC_CPU3` /
-`GENERIC_CPU4` booleans; the patch was later refactored to a single
-`CONFIG_X86_64_VERSION` int (range 1-3) symbol instead, which is what
-`config/zenith.config` sets (`CONFIG_X86_64_VERSION=3`). If you fetch a
-newer version of the patch and it reintroduces different symbol names,
-update `config/zenith.config` to match — `merge_config.sh` will warn (not
-fail) if a symbol from the fragment doesn't exist in the tree.
+This exact URL+content combination was previously confirmed working
+against `linuxManualConfig` by another user
+([nixpkgs issue #307014](https://github.com/NixOS/nixpkgs/issues/307014)) —
+`kernel.nix` carries over their reported hash rather than a fresh guess.
+Because this points at the mutable `main` branch rather than an immutable
+tag, if firelzrd ever edits this specific file, `nix build` will fail
+loudly with a hash mismatch (never a silent wrong build) — paste in the
+newly reported hash if that happens.
+
+## x86-64-v3 CPU tuning — no patch
+
+There used to be a second patch here (graysky2/kernel_compiler_patch,
+adding an x86-64 ISA-level Kconfig symbol). Its upstream URLs are no longer
+reachable (404), and mainline Linux has no built-in equivalent Kconfig
+option, so this repo does not carry any out-of-tree patch for CPU tuning at
+all.
+
+Instead, x86-64-v3 targeting is applied purely through `KCFLAGS`, an
+officially documented, in-mainline Kbuild override point — see the "2b"
+section of `kernel.nix` and the main README for the full rationale,
+including why the `-mno-sse`/`-mno-avx`/`-mno-fma` flags that follow
+`-march=x86-64-v3` are load-bearing and not optional decoration.

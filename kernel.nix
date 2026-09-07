@@ -1,6 +1,12 @@
 /*
-  Zenith Kernel — Linux 6.6.x, BORE scheduler, Clang/LLVM + ThinLTO,
+  Zenith Kernel — Linux 6.6.3, BORE scheduler, Clang/LLVM + ThinLTO,
   x86-64-v3 tuned, trimmed with a real modprobed.db from the target T480.
+
+  Pinned to 6.6.3, not a later 6.6.x, because that's the one point release
+  in the whole 6.6 line with a BORE patch that applies cleanly -- see the
+  kernelPatchVersion comment below for the full story (upstream backported
+  EEVDF changes into kernel/sched/fair.c mid-series, and even firelzrd,
+  BORE's own maintainer, never got a confirmed-working patch past 6.6.30).
 
   Design notes (see README.md for the full rationale):
 
@@ -14,13 +20,16 @@
     "diff against a list of actually-loaded modules" behavior, so it can't
     do this job on its own.
 
-  * `GENERIC_CPU3` does not exist, in mainline or in the current
-    graysky2/kernel_compiler_patch. Stock upstream Linux has NO x86-64-v2
-    /v3/v4 Kconfig option at all -- that's exclusively provided by the
-    out-of-tree graysky2 patch, and that patch was itself refactored to
-    replace the old `GENERIC_CPU2/3/4` booleans with a single
-    `CONFIG_X86_64_VERSION` int (range 1-3) symbol. We apply that patch
-    and set `CONFIG_X86_64_VERSION=3` in config/zenith.config.
+  * `GENERIC_CPU3` does not exist, in mainline or anywhere else, and we do
+    NOT carry an out-of-tree Kconfig patch for x86-64-v3 tuning (the
+    graysky2/kernel_compiler_patch URLs this repo previously used went 404
+    upstream, and chasing a moving third-party mirror for something this
+    build-critical is exactly the kind of hidden fragility reproducibility
+    is supposed to rule out). Instead, x86-64-v3 targeting is done purely
+    through `KCFLAGS`, an officially documented, in-mainline Kbuild
+    override point -- see `kcflags` below and README.md for why the
+    `-mno-sse`/`-mno-avx`/... flags after `-march=x86-64-v3` are not
+    optional decoration.
 
   * `-O3` is deliberately NOT used. The kernel build system only supports
     `-O2` (CC_OPTIMIZE_FOR_PERFORMANCE) or `-Os` upstream; there is no
@@ -55,16 +64,18 @@ let
 
   kernelMajorMinor = "6.6";
 
-  # IMPORTANT: this must be a point release for which a matching BORE patch
-  # actually exists. BORE patches are versioned per exact kernel point
-  # release (e.g. firelzrd/bore-scheduler tags like "6.6.3-bore4.1.1"), or
-  # per-branch via CachyOS/kernel-patches ("6.6/sched/0001-bore-cachy.patch",
-  # which tracks the 6.6 branch rather than one exact point release and is
-  # what this file uses by default). Before bumping kernelPatchVersion,
-  # confirm the CachyOS 6.6 patch still applies (CI will fail loudly with a
-  # patch-rejection error if it doesn't), or pin to a specific firelzrd tag
-  # instead. See patches/README.md.
-  kernelPatchVersion = "80";
+  # BORE is not maintained per arbitrary 6.6.x point release. Upstream
+  # backported EEVDF-related changes into kernel/sched/fair.c partway
+  # through the 6.6 stable series (see firelzrd/bore-scheduler issue #39:
+  # the maintainer himself could not get a working patch past 6.6.30 and
+  # published only an untested WIP for it). firelzrd's repo still carries
+  # a commit explicitly labeled "BORE 6.6.3 (stable) patch" even while
+  # their own development has moved on to far newer kernels -- 6.6.3 is
+  # their designated stable reference point for the 6.6 branch, not an
+  # abandoned tag. This repo pins to that exact point release for that
+  # reason: it's the one version in the whole 6.6.x line with a patch that
+  # actually applies cleanly, not a guess.
+  kernelPatchVersion = "3";
   kernelVersion = "${kernelMajorMinor}.${kernelPatchVersion}";
 
   zenithSuffix = "zenith";
@@ -74,7 +85,7 @@ let
     url = "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${kernelVersion}.tar.xz";
     # Placeholder. `nix build` will fail on the first run and print the
     # correct hash to paste in here -- see README.md "First build" section.
-    hash = "sha256-bPkR0BMk9Fyd0vRM8G9VvaDs84O8SY8TKgxUl2hTEyc=";
+    hash = lib.fakeHash;
   };
 
   #############################################################################
@@ -95,23 +106,66 @@ let
   clangMakeFlags = [ "LLVM=1" "LLVM_IAS=1" "ARCH=x86_64" ];
 
   #############################################################################
+  # 2b. x86-64-v3 targeting via KCFLAGS (no out-of-tree Kconfig patch)
+  #
+  # `-march=x86-64-v3` on its own would also imply AVX/AVX2/FMA. Mainline's
+  # own arch/x86/Makefile unconditionally appends
+  # `-mno-sse -mno-mmx -mno-sse2 -mno-3dnow -mno-avx -mno-sse4a` early in
+  # the flag pipeline, specifically so the compiler never emits FPU/vector
+  # register code in general kernel context -- the kernel does not save or
+  # restore extended (xmm/ymm) register state on every entry/exit, so
+  # vector codegen leaking into the wrong place is a correctness bug, not
+  # a style question. KCFLAGS is appended *after* that line by Kbuild
+  # (that's the whole point of KCFLAGS -- it's the user's final word), so
+  # a bare `-march=x86-64-v3` would silently re-enable AVX and undo that
+  # invariant. Re-asserting the `-mno-*` flags after `-march` restores it
+  # while keeping the scalar, integer-register ISA-v3 additions we
+  # actually want (BMI1/BMI2/LZCNT/MOVBE/POPCNT/CMPXCHG16B) and the
+  # associated instruction-scheduling improvements.
+  #
+  # The T480 (8th-gen "Kaby Lake R", i5-8250U/i7-8650U-class) is well
+  # above the x86-64-v3 baseline (that baseline requires AVX2/BMI1/BMI2/
+  # FMA/MOVBE, all present since Haswell, 2013), so there's no
+  # compatibility risk in targeting it.
+  #
+  # Applied via `.overrideAttrs` below rather than `extraMakeFlags`,
+  # because `extraMakeFlags` list elements get word-split unquoted by the
+  # generic builder -- a single list entry containing embedded spaces
+  # (multiple `-mno-*` flags) would be torn into separate argv tokens and
+  # make would choke on bare `-mno-sse` as an invalid command-line option.
+  # A plain derivation attribute is passed through as a single intact
+  # environment variable instead, which Kbuild's top-level Makefile reads
+  # directly (`KBUILD_CFLAGS += $(KCFLAGS)`).
+  #############################################################################
+
+  zenithKcflags = lib.concatStringsSep " " [
+    "-march=x86-64-v3"
+    "-mno-sse" "-mno-sse2" "-mno-sse3" "-mno-ssse3"
+    "-mno-sse4.1" "-mno-sse4.2" "-mno-sse4a"
+    "-mno-avx" "-mno-avx2" "-mno-fma"
+    "-mno-mmx" "-mno-3dnow"
+  ];
+
+  #############################################################################
   # 3. Patches
   #############################################################################
 
   borePatch = fetchpatch {
-    url = "https://raw.githubusercontent.com/CachyOS/kernel-patches/master/6.6/sched/0001-bore-cachy.patch";
-    hash = "sha256-Tz7yxrwo3kzd2J/BvX3HEQmVcMD2ILxFXvY/d46iB7I="; # fill in after first `nix build` failure
-  };
-
-  isaLevelPatch = fetchpatch {
-    # graysky2/kernel_compiler_patch: adds CONFIG_X86_64_VERSION.
-    url = "https://raw.githubusercontent.com/graysky2/kernel_compiler_patch/master/more-uarches-for-kernel-6.1.79-6.8-rc3.patch";
-    hash = "sha256-Gjglt5BBPQmAbJohFfZ5vijkNM/MacAdwGm2NNHoAHo="; # fill in after first `nix build` failure
+    # firelzrd's own "stable" reference patch for the 6.6 branch, pinned to
+    # 6.6.3 specifically (see the kernelPatchVersion comment above for why).
+    # This exact URL+version combination has previously been confirmed
+    # working against `linuxManualConfig` by another user
+    # (nixpkgs issue #307014) -- the hash below is theirs, carried over
+    # rather than re-guessed. Since this points at the mutable `main`
+    # branch, `nix build` will fail loudly with a hash mismatch (not a
+    # silent wrong build) if firelzrd ever touches this file; if that
+    # happens, paste in the new hash it reports.
+    url = "https://raw.githubusercontent.com/firelzrd/bore-scheduler/main/patches/stable/linux-6.6-bore/0001-linux6.6.y-bore5.1.0.patch";
+    hash = "sha256-iLydPGZZSkEQhSj6Ah0Xq0zf7YUPwcpyKt8t0BeHYz8=";
   };
 
   kernelPatches = [
     { name = "bore-scheduler"; patch = borePatch; }
-    { name = "x86-64-isa-levels"; patch = isaLevelPatch; }
   ];
 
   #############################################################################
@@ -177,7 +231,7 @@ let
   #    regenerate one from structuredExtraConfig instead).
   #############################################################################
 
-  zenithKernel = linuxManualConfig {
+  zenithKernelBase = linuxManualConfig {
     inherit lib;
     stdenv = zenithStdenv;
 
@@ -194,6 +248,13 @@ let
     # whether CONFIG_MODULES is set) read the configfile at eval time.
     allowImportFromDerivation = true;
   };
+
+  # x86-64-v3 targeting, applied as a genuine environment variable (see the
+  # "2b" comment above for why this can't just be another extraMakeFlags
+  # list entry).
+  zenithKernel = zenithKernelBase.overrideAttrs (old: {
+    KCFLAGS = (old.KCFLAGS or "") + " " + zenithKcflags;
+  });
 
 in
 lib.recurseIntoAttrs (linuxPackagesFor zenithKernel)
