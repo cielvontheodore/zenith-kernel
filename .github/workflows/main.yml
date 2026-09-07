@@ -15,7 +15,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Dependencies
+      - name: Install Build Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -31,17 +31,24 @@ jobs:
             kmod \
             cpio \
             zstd \
-            ccache
+            ccache \
+            dwarves \
+            pahole \
+            zstd \
+            tar
 
       - name: Make scripts executable
         run: |
           chmod +x scripts/*.sh || true
 
-      - name: Run TKG Build Script
+      - name: Run TKG Build Non-Interactively
         run: |
+          # Memaksa TKG membaca file customization.cfg tanpa minta prompt user
+          export _interactive="false"
+          export NONINTERACTIVE="true"
           ./scripts/build-tkg.sh
 
-      - name: Run Package Script (If exists)
+      - name: Run Package Script
         if: success()
         run: |
           if [ -f "./scripts/package-tarball.sh" ]; then
@@ -59,4 +66,5 @@ jobs:
             *.pkg.tar.zst
             out/
             logs/
+            *.log
           if-no-files-found: warn
